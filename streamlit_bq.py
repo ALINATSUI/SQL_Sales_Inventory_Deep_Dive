@@ -10,8 +10,6 @@ client = bigquery.Client(credentials=credentials)
 # st.set_page_config(layout="wide")
 @st.cache_data(ttl=600)
 
-
-
 def run_query(query):
     query_job = client.query(query)
     rows_raw = query_job.result()
@@ -32,7 +30,7 @@ q1.subheader(body="""
 """, anchor=False)
 
 q1_query = run_query("""
-                    SELECT category, ROUND(SUM(sale_price), 2) AS Total_Revenue
+                    SELECT category, FORMAT("%'.2f", ROUND(SUM(sale_price), 2)) AS Total_Revenue
 
 FROM `bigquery-public-data.thelook_ecommerce.products` AS Products_table
 INNER JOIN `bigquery-public-data.thelook_ecommerce.order_items` AS Order_Items_table 
@@ -42,6 +40,7 @@ WHERE order_items_table.status = 'Complete'
 GROUP BY category
 ORDER BY Total_Revenue DESC
                      """ )
+
 q1_query_df = pd.DataFrame(q1_query)
 st.image("q1_sql.png", caption='Q1 - SQL Query Results')
 st.divider(width='stretch')
@@ -113,7 +112,7 @@ q3_query = run_query("""
                      SELECT 
 EXTRACT(YEAR FROM created_at) YEAR, 
 EXTRACT(MONTH FROM created_at) MONTH, 
-SUM(order_id) order_count,
+FORMAT("%'.2d",SUM(order_id)) order_count,
 FROM `bigquery-public-data.thelook_ecommerce.order_items` Order_Items
 WHERE EXTRACT(YEAR FROM created_at) > 2022
 GROUP BY YEAR, MONTH
@@ -140,7 +139,7 @@ st.image('Q4_sql.png', caption='Q4 - SQL Query Results')
 
 q4_query = run_query("""
                      SELECT DC.name DC_CITY,
-COUNT(INV.id) Total_Units 
+FORMAT("%'.2d",COUNT(INV.id)) Total_Units 
 FROM `bigquery-public-data.thelook_ecommerce.distribution_centers` DC 
 JOIN `bigquery-public-data.thelook_ecommerce.inventory_items` INV 
 ON INV.product_distribution_center_id = DC.id --both integers
@@ -200,7 +199,7 @@ q6_Aggrid_return = AgGrid(q6_df)
 
 
 Q7 =  st.container(width='stretch', height='content', autoscroll=False, border=True)
-Q7.header('High-Value Completed Orders')
+Q7.header('Q7: High-Value Completed Orders')
               
 Q7.subheader(body='''Find all individual order line items where the sale_price was greater than $150 and the status is 'Complete'. Join to products to include the product name and category. Show order_id, product name, category, sale_price, and the date the order was created (just the date, not the timestamp). Sort by sale_price descending.
 
@@ -298,5 +297,28 @@ Q10.subheader(body = '''For each distribution center, calculate the total revenu
       💡 Tip: This is a multi-table join. Sketch out which key connects each pair of tables before writing the query. Build and test one JOIN at a time.
 
 ''')
+Q10_query = run_query("""
+                      SELECT DC.name, FORMAT("%'.2f", SUM(INV.COST)) TOTAL_COST, 
+                      FORMAT("%'.2f", SUM(O.sale_price)) TOTAL_REVENUE, 
+                      FORMAT("%'.2f", SUM(O.sale_price - INV.cost)) GROSS_PROFIT
 
+FROM `bigquery-public-data.thelook_ecommerce.inventory_items` INV
+JOIN `bigquery-public-data.thelook_ecommerce.distribution_centers` DC
+ON INV.product_distribution_center_id = DC.id
+
+JOIN `bigquery-public-data.thelook_ecommerce.order_items` O 
+ON INV.product_distribution_center_id = O.id
+GROUP BY DC.name
+ORDER BY SUM(O.sale_price - INV.cost) DESC
+                      """)
+q10_df = pd.DataFrame(Q10_query)
+q10_df.rename(columns={
+    'name': 'DIST CTR - CITY',
+    'GROSS_PROFIT': 'GROSS_PROFIT - DESC'
+}, inplace=True)
+st.dataframe(q10_df)
+st.image('Q10_SQL.png', caption='Q10 - SQL Query Result')
+st.image('Q10_TotalCost.png', caption='Q10 - Total Cost Verification')
+st.write('As a test, I verified that the total cost of inventory sold for all distribution centers was comparable to the GROUP BY cost by each distribution center that I tallied individually. ')
 st.divider(width='stretch')
+
